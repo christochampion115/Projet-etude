@@ -1,0 +1,22 @@
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import { BrowserRouter } from 'react-router-dom'
+import './index.css'
+import { AuthProvider } from '@/context/AuthContext'
+import { DataProvider } from '@/data/DataProvider'
+import { FocusTimerProvider } from '@/context/FocusTimerContext'
+import { App } from './App.tsx'
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <BrowserRouter>
+      <AuthProvider>
+        <DataProvider>
+          <FocusTimerProvider>
+            <App />
+          </FocusTimerProvider>
+        </DataProvider>
+      </AuthProvider>
+    </BrowserRouter>
+  </StrictMode>,
+)

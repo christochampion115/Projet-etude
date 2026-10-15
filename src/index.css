@@ -1,0 +1,46 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
+
+  --color-accent-50: #f2f1fe;
+  --color-accent-100: #e5e3fd;
+  --color-accent-200: #cbc6fb;
+  --color-accent-300: #a79ef7;
+  --color-accent-400: #8172f1;
+  --color-accent-500: #6250e8;
+  --color-accent-600: #5038d6;
+  --color-accent-700: #422eb4;
+  --color-accent-800: #382a8f;
+  --color-accent-900: #312772;
+}
+
+:root {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  @apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  @apply bg-accent-200 dark:bg-accent-700;
+}
+
