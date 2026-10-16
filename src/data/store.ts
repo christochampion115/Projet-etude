@@ -1,10 +1,12 @@
 import { createId, nowIso } from '@/lib/id'
+import { hasExamPassed } from '@/lib/selectors'
 import { getRepository } from '@/lib/repositories'
 import { emptySnapshot, type RepositorySnapshot } from '@/lib/repositories/types'
 import type {
   AcademicPeriod,
   AcademicYear,
   Course,
+  CourseCategory,
   CourseDocument,
   CourseTopic,
   Exam,
@@ -71,18 +73,30 @@ export class AppDataStore {
 
   /* ---------------------------- Années académiques ---------------------------- */
 
-  async createAcademicYear(input: { label: string; startDate: string | null; endDate: string | null }) {
+  async createAcademicYear(input: { label: string; startDate: string | null; endDate: string | null; periodNames?: string[] }) {
     const repo = getRepository()
+    const yearId = createId()
+    const periods = (input.periodNames ?? []).map((name, order) => ({
+      id: createId(), ownerId: this.requireOwnerId(), academicYearId: yearId,
+      name: name.trim(), startDate: null, endDate: null, order,
+    }))
+    if (periods.some((p) => !p.name || p.name.length > 60)) throw new Error('Nom de période invalide')
+    if (new Set(periods.map((p) => p.name.toLocaleLowerCase('fr'))).size !== periods.length) {
+      throw new Error('Les noms des périodes doivent être distincts.')
+    }
     const entity = await repo.createAcademicYear({
-      id: createId(),
+      id: yearId,
       ownerId: this.requireOwnerId(),
       label: input.label,
       startDate: input.startDate,
       endDate: input.endDate,
       isActive: this.snapshot.academicYears.length === 0,
       archivedAt: null,
-    })
+    }, periods)
     this.snapshot.academicYears = [...this.snapshot.academicYears, entity]
+    this.snapshot.academicPeriods = [...this.snapshot.academicPeriods, ...periods.map((p) => ({
+      ...p, createdAt: entity.createdAt, updatedAt: entity.updatedAt,
+    }))]
     this.emit()
     return entity
   }
@@ -109,10 +123,12 @@ export class AppDataStore {
   }
 
   async deleteAcademicYear(id: string) {
+    if (this.snapshot.courses.some((c) => c.academicYearId === id)) throw new Error('Supprimez les cours avant de supprimer cette année.')
     const repo = getRepository()
     await repo.deleteAcademicYear(id)
     this.snapshot.academicYears = this.snapshot.academicYears.filter((y) => y.id !== id)
     this.snapshot.academicPeriods = this.snapshot.academicPeriods.filter((p) => p.academicYearId !== id)
+    this.snapshot.courseCategories = this.snapshot.courseCategories.filter((c) => c.academicYearId !== id)
     this.emit()
   }
 
@@ -160,21 +176,75 @@ export class AppDataStore {
 
   /* -------------------------------- Cours -------------------------------- */
 
+  private validateCoursePlacement(academicYearId: string, periodIds: string[], categoryId: string | null) {
+    if (periodIds.some((id) => !this.snapshot.academicPeriods.some((p) => p.id === id && p.academicYearId === academicYearId))) {
+      throw new Error("Les périodes doivent appartenir à l'année du cours.")
+    }
+    if (categoryId && !this.snapshot.courseCategories.some((c) => c.id === categoryId && c.academicYearId === academicYearId)) {
+      throw new Error("La catégorie doit appartenir à l'année du cours.")
+    }
+  }
+
+  async createCourseCategory(input: { academicYearId: string; kind: CourseCategory['kind']; parentId: string | null; name: string }) {
+    this.validateCategory(input.academicYearId, input.kind, input.parentId, input.name)
+    const entity = await getRepository().createCourseCategory({
+      ...input, name: input.name.trim(), id: createId(), ownerId: this.requireOwnerId(),
+    })
+    this.snapshot.courseCategories = [...this.snapshot.courseCategories, entity]
+    this.emit()
+    return entity
+  }
+
+  private validateCategory(yearId: string, kind: CourseCategory['kind'], parentId: string | null, name: string) {
+    if (!name.trim() || name.trim().length > 120) throw new Error('Nom de catégorie invalide')
+    if (!this.snapshot.academicYears.some((y) => y.id === yearId)) throw new Error('Année introuvable')
+    if (kind === 'option') {
+      if (!parentId) throw new Error('Choisissez le domaine auquel rattacher cette option.')
+      const domaine = this.snapshot.courseCategories.find((c) => c.id === parentId && c.academicYearId === yearId)
+      if (!domaine || domaine.kind !== 'domaine') throw new Error('Le parent doit être un domaine de la même année.')
+    } else if (parentId) {
+      throw new Error('Seule une option peut être rattachée à un domaine.')
+    }
+  }
+
+  async updateCourseCategory(id: string, patch: Pick<CourseCategory, 'name' | 'parentId'>) {
+    const current = this.snapshot.courseCategories.find((c) => c.id === id)
+    if (!current) throw new Error('Catégorie introuvable')
+    this.validateCategory(current.academicYearId, current.kind, patch.parentId, patch.name)
+    const updated = await getRepository().updateCourseCategory(id, { ...patch, name: patch.name.trim() })
+    this.snapshot.courseCategories = this.snapshot.courseCategories.map((c) => c.id === id ? updated : c)
+    this.emit()
+  }
+
+  async deleteCourseCategory(id: string) {
+    const hasOptions = this.snapshot.courseCategories.some((c) => c.parentId === id)
+    const hasCourses = this.snapshot.courses.some((c) => c.categoryId === id)
+    if (hasOptions || hasCourses) {
+      throw new Error('Déplacez les cours et options avant de supprimer cette catégorie.')
+    }
+    await getRepository().deleteCourseCategory(id)
+    this.snapshot.courseCategories = this.snapshot.courseCategories.filter((c) => c.id !== id)
+    this.emit()
+  }
+
   async createCourse(input: {
     academicYearId: string
     periodIds: string[]
+    categoryId?: string | null
     name: string
     professors: string[]
     description: string | null
     ects: number | null
     examModalities: string | null
   }) {
+    this.validateCoursePlacement(input.academicYearId, input.periodIds, input.categoryId ?? null)
     const repo = getRepository()
     const entity = await repo.createCourse({
       id: createId(),
       ownerId: this.requireOwnerId(),
       academicYearId: input.academicYearId,
       periodIds: input.periodIds,
+      categoryId: input.categoryId ?? null,
       name: input.name,
       professors: input.professors,
       description: input.description,
@@ -188,6 +258,10 @@ export class AppDataStore {
   }
 
   async updateCourse(id: string, patch: Partial<Course>) {
+    const current = this.snapshot.courses.find((c) => c.id === id)
+    if (!current) throw new Error('Cours introuvable')
+    const candidate = { ...current, ...patch }
+    this.validateCoursePlacement(candidate.academicYearId, candidate.periodIds, candidate.categoryId)
     const repo = getRepository()
     const updated = await repo.updateCourse(id, patch)
     this.snapshot.courses = this.snapshot.courses.map((c) => (c.id === id ? updated : c))
@@ -387,6 +461,7 @@ export class AppDataStore {
       type: input.type,
       modalities: input.modalities,
       preparationStatus: 'not_started',
+      result: null,
     })
     this.snapshot.exams = [...this.snapshot.exams, entity]
     this.emit()
@@ -394,6 +469,13 @@ export class AppDataStore {
   }
 
   async updateExam(id: string, patch: Partial<Exam>) {
+    const current = this.snapshot.exams.find((e) => e.id === id)
+    if (!current) throw new Error('Examen introuvable')
+    const date = patch.date === undefined ? current.date : patch.date
+    if (patch.result != null && !hasExamPassed(date)) {
+      throw new Error("Le résultat ne peut être renseigné qu'après la date de l'examen.")
+    }
+    if (!hasExamPassed(date)) patch = { ...patch, result: null }
     const repo = getRepository()
     const updated = await repo.updateExam(id, patch)
     this.snapshot.exams = this.snapshot.exams.map((e) => (e.id === id ? updated : e))

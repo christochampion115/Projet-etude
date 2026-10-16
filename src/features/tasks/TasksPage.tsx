@@ -12,6 +12,7 @@ import { useDataStore, useSnapshot } from '@/data/DataProvider'
 import { TASK_PRIORITIES, TASK_STATUSES, TASK_TYPES, EXAM_PREPARATION_STATUSES } from '@/types/domain'
 import { TaskFormModal } from './TaskFormModal'
 import { ExamFormModal } from './ExamFormModal'
+import { ExamResultSelect } from './ExamResultSelect'
 import type { Exam, Task } from '@/types/domain'
 
 type ViewMode = 'tasks' | 'exams'
@@ -167,6 +168,7 @@ export function TasksPage() {
                         <Badge tone="neutral">{EXAM_PREPARATION_STATUSES.find((s) => s.value === exam.preparationStatus)?.label}</Badge>
                       </div>
                     </div>
+                    <ExamResultSelect exam={exam} />
                     <Button size="sm" variant="ghost" icon={<Trash2 size={14} />} onClick={() => setDeleteExam(exam)} />
                   </li>
                 ))}

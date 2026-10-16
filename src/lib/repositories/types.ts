@@ -2,6 +2,7 @@ import type {
   AcademicPeriod,
   AcademicYear,
   Course,
+  CourseCategory,
   CourseDocument,
   CourseTopic,
   DocumentCategory,
@@ -29,13 +30,17 @@ export interface Repository {
 
   loadAll(ownerId: string): Promise<RepositorySnapshot>
 
-  createAcademicYear(input: Omit<AcademicYear, 'createdAt' | 'updatedAt'>): Promise<AcademicYear>
+  createAcademicYear(input: Omit<AcademicYear, 'createdAt' | 'updatedAt'>, periods?: Omit<AcademicPeriod, 'createdAt' | 'updatedAt'>[]): Promise<AcademicYear>
   updateAcademicYear(id: string, patch: Partial<AcademicYear>): Promise<AcademicYear>
   deleteAcademicYear(id: string): Promise<void>
 
   createAcademicPeriod(input: Omit<AcademicPeriod, 'createdAt' | 'updatedAt'>): Promise<AcademicPeriod>
   updateAcademicPeriod(id: string, patch: Partial<AcademicPeriod>): Promise<AcademicPeriod>
   deleteAcademicPeriod(id: string): Promise<void>
+
+  createCourseCategory(input: Omit<CourseCategory, 'createdAt' | 'updatedAt'>): Promise<CourseCategory>
+  updateCourseCategory(id: string, patch: Pick<CourseCategory, 'name' | 'parentId'>): Promise<CourseCategory>
+  deleteCourseCategory(id: string): Promise<void>
 
   createCourse(input: Omit<Course, 'createdAt' | 'updatedAt'>): Promise<Course>
   updateCourse(id: string, patch: Partial<Course>): Promise<Course>
@@ -80,6 +85,7 @@ export interface RepositorySnapshot {
   academicYears: AcademicYear[]
   academicPeriods: AcademicPeriod[]
   courses: Course[]
+  courseCategories: CourseCategory[]
   topics: CourseTopic[]
   documentCategories: DocumentCategory[]
   documents: CourseDocument[]
@@ -95,6 +101,7 @@ export function emptySnapshot(): RepositorySnapshot {
     academicYears: [],
     academicPeriods: [],
     courses: [],
+    courseCategories: [],
     topics: [],
     documentCategories: [],
     documents: [],

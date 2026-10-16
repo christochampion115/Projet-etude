@@ -99,6 +99,8 @@ export interface Course extends Timestamped, OwnedEntity {
   id: ID
   academicYearId: ID
   periodIds: ID[]
+  /** `null` = cours du tronc commun (aucune catégorisation). */
+  categoryId: ID | null
   name: string
   professors: string[]
   description: string | null
@@ -106,6 +108,42 @@ export interface Course extends Timestamped, OwnedEntity {
   status: CourseStatus
   examModalities: string | null
 }
+
+/**
+ * Catégorisation d'un cours au sein d'une année académique.
+ *
+ * - `domaine` : catégorie de premier niveau, nommée (ex. "Informatique").
+ * - `option` : catégorie de second niveau, toujours rattachée à un `domaine`
+ *   (`parentId` obligatoire).
+ * - `autre` : catégorie nommée libre, de premier niveau, pour tout
+ *   regroupement qui ne correspond pas à un domaine ou une option.
+ *
+ * Un cours sans catégorie (`categoryId` nul) est un cours du tronc commun.
+ */
+export type CourseCategoryKind = 'domaine' | 'option' | 'autre'
+
+export const COURSE_CATEGORY_KINDS: { value: CourseCategoryKind; label: string }[] = [
+  { value: 'domaine', label: 'Domaine' },
+  { value: 'option', label: 'Option' },
+  { value: 'autre', label: 'Autre catégorie' },
+]
+
+export interface CourseCategory extends Timestamped, OwnedEntity {
+  id: ID
+  academicYearId: ID
+  kind: CourseCategoryKind
+  /** Uniquement renseigné pour une option : identifiant du domaine parent. */
+  parentId: ID | null
+  name: string
+}
+
+export type ExamResult = 'pending' | 'passed' | 'failed'
+
+export const EXAM_RESULTS: { value: ExamResult; label: string }[] = [
+  { value: 'pending', label: 'En attente de résultat' },
+  { value: 'passed', label: 'Réussi' },
+  { value: 'failed', label: 'Raté' },
+]
 
 export interface CourseTopic extends Timestamped {
   id: ID
@@ -155,6 +193,7 @@ export interface Exam extends Timestamped, OwnedEntity {
   type: ExamType
   modalities: string | null
   preparationStatus: ExamPreparationStatus
+  result: ExamResult | null
 }
 
 export type StudySessionSource = 'timer' | 'manual'

@@ -20,6 +20,7 @@ export function PeriodFormModal({
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<AcademicPeriodFormValues>({
     resolver: zodResolver(academicPeriodSchema),
@@ -32,9 +33,13 @@ export function PeriodFormModal({
 
   async function onSubmit(values: AcademicPeriodFormValues) {
     const payload = { name: values.name, startDate: values.startDate || null, endDate: values.endDate || null }
-    if (period) await store.updateAcademicPeriod(period.id, payload)
-    else await store.createAcademicPeriod({ academicYearId: yearId, ...payload })
-    onClose()
+    try {
+      if (period) await store.updateAcademicPeriod(period.id, payload)
+      else await store.createAcademicPeriod({ academicYearId: yearId, ...payload })
+      onClose()
+    } catch (error) {
+      setError('root', { message: error instanceof Error ? error.message : "Impossible d'enregistrer la période." })
+    }
   }
 
   return (
@@ -51,6 +56,7 @@ export function PeriodFormModal({
             <TextInput type="date" {...register('endDate')} />
           </Field>
         </div>
+        {errors.root && <p role="alert" className="text-sm text-red-600">{errors.root.message}</p>}
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="secondary" onClick={onClose}>
             Annuler

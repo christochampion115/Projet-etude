@@ -5,6 +5,7 @@ import type {
   AcademicPeriod,
   AcademicYear,
   Course,
+  CourseCategory,
   CourseDocument,
   CourseTopic,
   DocumentCategory,
@@ -55,12 +56,26 @@ function mapCourse(row: Record<string, unknown>): Course {
     ownerId: row.owner_id as string,
     academicYearId: row.academic_year_id as string,
     periodIds: (row.period_ids as string[]) ?? [],
+    categoryId: (row.category_id as string | null) ?? null,
     name: row.name as string,
     professors: (row.professors as string[]) ?? [],
     description: (row.description as string | null) ?? null,
     ects: (row.ects as number | null) ?? null,
     status: row.status as Course['status'],
     examModalities: (row.exam_modalities as string | null) ?? null,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+  }
+}
+
+function mapCourseCategory(row: Record<string, unknown>): CourseCategory {
+  return {
+    id: row.id as string,
+    ownerId: row.owner_id as string,
+    academicYearId: row.academic_year_id as string,
+    kind: row.kind as CourseCategory['kind'],
+    parentId: (row.parent_id as string | null) ?? null,
+    name: row.name as string,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   }
@@ -130,10 +145,11 @@ function mapExam(row: Record<string, unknown>): Exam {
     ownerId: row.owner_id as string,
     courseId: row.course_id as string,
     title: row.title as string,
-    date: (row.exam_date as string | null) ?? null,
+    date: (row.exam_date as string | null)?.slice(0, 10) ?? null,
     type: row.type as Exam['type'],
     modalities: (row.modalities as string | null) ?? null,
     preparationStatus: row.preparation_status as Exam['preparationStatus'],
+    result: (row.result as Exam['result']) ?? null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   }
@@ -216,6 +232,7 @@ export function createSupabaseRepository(client: SupabaseClient): Repository {
         ])
 
       const snapshot = emptySnapshot()
+      snapshot.courseCategories = unwrapRows(await client.from('course_categories').select('*').eq('owner_id', ownerId)).map(mapCourseCategory)
       snapshot.academicYears = unwrapRows(years).map(mapYear)
       snapshot.academicPeriods = unwrapRows(periods).map(mapPeriod)
       snapshot.courses = unwrapRows(courses).map(mapCourse)
@@ -231,7 +248,21 @@ export function createSupabaseRepository(client: SupabaseClient): Repository {
       return snapshot
     },
 
-    async createAcademicYear(input) {
+    async createAcademicYear(input, periods = []) {
+      if (periods.length > 0) {
+        const row = unwrapRow(await client.rpc('create_academic_year_with_periods', {
+          year_data: {
+            id: input.id, owner_id: input.ownerId, label: input.label,
+            start_date: input.startDate, end_date: input.endDate,
+            is_active: input.isActive, archived_at: input.archivedAt,
+          },
+          period_data: periods.map((p) => ({
+            id: p.id, name: p.name, sort_order: p.order,
+            start_date: p.startDate, end_date: p.endDate,
+          })),
+        }))
+        return mapYear(row)
+      }
       const row = unwrapRow(
         await client
           .from('academic_years')
@@ -310,6 +341,22 @@ export function createSupabaseRepository(client: SupabaseClient): Repository {
       if (error) throw new Error(error.message)
     },
 
+    async createCourseCategory(input) {
+      return mapCourseCategory(unwrapRow(await client.from('course_categories').insert({
+        id: input.id, owner_id: input.ownerId, academic_year_id: input.academicYearId,
+        kind: input.kind, parent_id: input.parentId, name: input.name,
+      }).select().single()))
+    },
+    async updateCourseCategory(id, patch) {
+      return mapCourseCategory(unwrapRow(await client.from('course_categories').update({
+        name: patch.name, parent_id: patch.parentId,
+      }).eq('id', id).select().single()))
+    },
+    async deleteCourseCategory(id) {
+      const { error } = await client.from('course_categories').delete().eq('id', id)
+      if (error) throw new Error(error.message)
+    },
+
     async createCourse(input) {
       const row = unwrapRow(
         await client
@@ -319,6 +366,7 @@ export function createSupabaseRepository(client: SupabaseClient): Repository {
             owner_id: input.ownerId,
             academic_year_id: input.academicYearId,
             period_ids: input.periodIds,
+            category_id: input.categoryId,
             name: input.name,
             professors: input.professors,
             description: input.description,
@@ -335,6 +383,7 @@ export function createSupabaseRepository(client: SupabaseClient): Repository {
       const payload: Record<string, unknown> = {}
       if (patch.academicYearId !== undefined) payload.academic_year_id = patch.academicYearId
       if (patch.periodIds !== undefined) payload.period_ids = patch.periodIds
+      if (patch.categoryId !== undefined) payload.category_id = patch.categoryId
       if (patch.name !== undefined) payload.name = patch.name
       if (patch.professors !== undefined) payload.professors = patch.professors
       if (patch.description !== undefined) payload.description = patch.description
@@ -505,6 +554,7 @@ export function createSupabaseRepository(client: SupabaseClient): Repository {
             type: input.type,
             modalities: input.modalities,
             preparation_status: input.preparationStatus,
+            result: input.result,
           })
           .select()
           .single(),
@@ -513,6 +563,8 @@ export function createSupabaseRepository(client: SupabaseClient): Repository {
     },
     async updateExam(id, patch) {
       const payload: Record<string, unknown> = {}
+      if (patch.result !== undefined) payload.result = patch.result
+      if (patch.courseId !== undefined) payload.course_id = patch.courseId
       if (patch.title !== undefined) payload.title = patch.title
       if (patch.date !== undefined) payload.exam_date = patch.date
       if (patch.type !== undefined) payload.type = patch.type

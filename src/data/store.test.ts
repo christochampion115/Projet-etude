@@ -15,9 +15,10 @@ function createFakeRepository(): Repository {
     async loadAll() {
       return structuredClone(snapshot)
     },
-    async createAcademicYear(input) {
+    async createAcademicYear(input, periods = []) {
       const entity = { ...input, createdAt: stamp(), updatedAt: stamp() }
       snapshot.academicYears.push(entity)
+      snapshot.academicPeriods.push(...periods.map((p) => ({ ...p, createdAt: stamp(), updatedAt: stamp() })))
       return entity
     },
     async updateAcademicYear(id, patch) {
@@ -40,6 +41,19 @@ function createFakeRepository(): Repository {
     },
     async deleteAcademicPeriod(id) {
       snapshot.academicPeriods = snapshot.academicPeriods.filter((p) => p.id !== id)
+    },
+    async createCourseCategory(input) {
+      const entity = { ...input, createdAt: stamp(), updatedAt: stamp() }
+      snapshot.courseCategories.push(entity)
+      return entity
+    },
+    async updateCourseCategory(id, patch) {
+      const entity = snapshot.courseCategories.find((c) => c.id === id)!
+      Object.assign(entity, patch, { updatedAt: stamp() })
+      return entity
+    },
+    async deleteCourseCategory(id) {
+      snapshot.courseCategories = snapshot.courseCategories.filter((c) => c.id !== id)
     },
     async createCourse(input) {
       const entity = { ...input, createdAt: stamp(), updatedAt: stamp() }
@@ -171,6 +185,77 @@ describe('AppDataStore', () => {
     vi.mocked(getRepository).mockReturnValue(createFakeRepository())
     store = new AppDataStore()
     await store.load('owner-1')
+  })
+
+  it('crée une année et ses périodes nommées puis les recharge', async () => {
+    const year = await store.createAcademicYear({ label: '2026', startDate: null, endDate: null, periodNames: ['Q1', 'Q2', 'TA'] })
+    expect(store.getSnapshot().academicPeriods.map((p) => p.name)).toEqual(['Q1', 'Q2', 'TA'])
+    await store.load('owner-1')
+    expect(store.getSnapshot().academicPeriods.every((p) => p.academicYearId === year.id)).toBe(true)
+    await expect(store.createAcademicYear({ label: '2027', startDate: null, endDate: null, periodNames: ['Q1', ' q1 '] })).rejects.toThrow('distincts')
+    expect(store.getSnapshot().academicYears).toHaveLength(1)
+  })
+
+  it('catégorise un cours en tronc commun, domaine, option ou autre catégorie, et refuse les rattachements invalides', async () => {
+    const year = await store.createAcademicYear({ label: '2026', startDate: null, endDate: null, periodNames: ['Q1', 'Q2', 'TA'] })
+    const domaine = await store.createCourseCategory({ academicYearId: year.id, kind: 'domaine', parentId: null, name: 'Sciences' })
+    const option = await store.createCourseCategory({ academicYearId: year.id, kind: 'option', parentId: domaine.id, name: 'Informatique' })
+    const autre = await store.createCourseCategory({ academicYearId: year.id, kind: 'autre', parentId: null, name: 'Alternance' })
+    const periodIds = store.getSnapshot().academicPeriods.map((p) => p.id)
+
+    // Une option doit obligatoirement être rattachée à un domaine.
+    await expect(store.createCourseCategory({ academicYearId: year.id, kind: 'option', parentId: null, name: 'Orpheline' })).rejects.toThrow('domaine')
+    // Le parent d'une option doit être un domaine, pas une autre option ou une autre catégorie.
+    await expect(store.createCourseCategory({ academicYearId: year.id, kind: 'option', parentId: option.id, name: 'Sous-option' })).rejects.toThrow('domaine')
+    // Un domaine ou une autre catégorie ne peut pas avoir de parent.
+    await expect(store.createCourseCategory({ academicYearId: year.id, kind: 'domaine', parentId: domaine.id, name: 'Autre domaine' })).rejects.toThrow('Seule une option')
+    await expect(store.createCourseCategory({ academicYearId: year.id, kind: 'autre', parentId: domaine.id, name: 'Autre catégorie' })).rejects.toThrow('Seule une option')
+
+    // Tronc commun par défaut (aucune catégorie).
+    const course = await store.createCourse({
+      academicYearId: year.id, periodIds, categoryId: null,
+      name: 'Maths', professors: [], description: null, ects: null, examModalities: null,
+    })
+    expect(store.getSnapshot().courses[0].categoryId).toBeNull()
+
+    // Le cours peut être rattaché directement à un domaine...
+    await store.updateCourse(course.id, { categoryId: domaine.id })
+    expect(store.getSnapshot().courses[0].categoryId).toBe(domaine.id)
+    // ... ou à une option de ce domaine...
+    await store.updateCourse(course.id, { categoryId: option.id })
+    expect(store.getSnapshot().courses[0].categoryId).toBe(option.id)
+    // ... ou à une autre catégorie nommée.
+    await store.updateCourse(course.id, { categoryId: autre.id })
+    expect(store.getSnapshot().courses[0].categoryId).toBe(autre.id)
+    expect(store.getSnapshot().courses[0].periodIds).toEqual(periodIds)
+
+    // Une catégorie occupée (par un cours ou par une option) ne peut pas être supprimée.
+    await store.updateCourse(course.id, { categoryId: option.id })
+    await expect(store.deleteCourseCategory(option.id)).rejects.toThrow('Déplacez')
+    await expect(store.deleteCourseCategory(domaine.id)).rejects.toThrow('Déplacez')
+
+    const other = await store.createAcademicYear({ label: '2027', startDate: null, endDate: null, periodNames: ['Q1'] })
+    await expect(store.updateCourse(course.id, { academicYearId: other.id })).rejects.toThrow('périodes')
+    await expect(store.updateCourse(course.id, { academicYearId: other.id, periodIds: [] })).rejects.toThrow('catégorie')
+
+    await store.updateCourse(course.id, { categoryId: null })
+    await store.deleteCourseCategory(option.id)
+    await store.deleteCourseCategory(domaine.id)
+    await store.deleteCourseCategory(autre.id)
+    expect(store.getSnapshot().courseCategories).toHaveLength(0)
+  })
+
+  it("autorise les résultats après l'examen et les réinitialise si l'examen est reporté", async () => {
+    const exam = await store.createExam({ courseId: 'course', title: 'Examen', date: '2000-01-01', type: 'written', modalities: null })
+    for (const result of ['passed', 'failed', 'pending'] as const) {
+      await store.updateExam(exam.id, { result })
+      expect(store.getSnapshot().exams[0].result).toBe(result)
+    }
+    await store.updateExam(exam.id, { date: '2999-01-01' })
+    expect(store.getSnapshot().exams[0].result).toBeNull()
+    await expect(store.updateExam(exam.id, { result: 'passed' })).rejects.toThrow("après la date")
+    await store.updateExam(exam.id, { date: null })
+    await expect(store.updateExam(exam.id, { result: 'pending' })).rejects.toThrow("après la date")
   })
 
   it('crée un cours et le reflète immédiatement dans l\'instantané', async () => {

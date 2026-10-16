@@ -22,6 +22,7 @@ export function ExamFormModal({
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<ExamFormValues>({
     resolver: zodResolver(examSchema),
@@ -42,9 +43,13 @@ export function ExamFormModal({
       type: values.type,
       modalities: values.modalities || null,
     }
-    if (exam) await store.updateExam(exam.id, payload)
-    else await store.createExam(payload)
-    onClose()
+    try {
+      if (exam) await store.updateExam(exam.id, payload)
+      else await store.createExam(payload)
+      onClose()
+    } catch (error) {
+      setError('root', { message: error instanceof Error ? error.message : "Impossible d'enregistrer l'examen." })
+    }
   }
 
   return (
@@ -79,6 +84,7 @@ export function ExamFormModal({
         <Field label="Modalités (facultatives)">
           <Textarea rows={3} {...register('modalities')} />
         </Field>
+        {errors.root && <p role="alert" className="text-sm text-red-600">{errors.root.message}</p>}
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="secondary" onClick={onClose}>
             Annuler

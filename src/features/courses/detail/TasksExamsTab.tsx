@@ -9,6 +9,7 @@ import { Select } from '@/components/ui/form'
 import { useDataStore } from '@/data/DataProvider'
 import { TaskFormModal } from '@/features/tasks/TaskFormModal'
 import { ExamFormModal } from '@/features/tasks/ExamFormModal'
+import { ExamResultSelect } from '@/features/tasks/ExamResultSelect'
 import { EXAM_PREPARATION_STATUSES, TASK_PRIORITIES, TASK_TYPES } from '@/types/domain'
 import type { Exam, Task } from '@/types/domain'
 
@@ -98,6 +99,7 @@ export function TasksExamsTab({ courseId, tasks, exams }: { courseId: string; ta
                       </option>
                     ))}
                   </Select>
+                  <ExamResultSelect exam={exam} />
                 </li>
               ))}
             </ul>

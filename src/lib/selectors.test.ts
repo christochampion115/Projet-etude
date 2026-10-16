@@ -1,14 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import {
+  autresCategoriesForYear,
   computeProgramProgress,
   computeTaskProgress,
   coursesNeedingAttention,
+  courseCategoryOptions,
+  describeCourseCategory,
+  domainesForYear,
   findNextDeadline,
   formatMinutes,
   groupTopicsByCourse,
+  hasExamPassed,
+  optionsForDomaine,
   sumStudyMinutes,
 } from '@/lib/selectors'
-import type { Course, CourseTopic, Exam, StudySession, Task } from '@/types/domain'
+import type { Course, CourseCategory, CourseTopic, Exam, StudySession, Task } from '@/types/domain'
 
 const OWNER = 'owner-1'
 
@@ -55,6 +61,7 @@ function makeExam(overrides: Partial<Exam>): Exam {
     type: 'written',
     modalities: null,
     preparationStatus: 'not_started',
+    result: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
@@ -67,6 +74,7 @@ function makeCourse(overrides: Partial<Course>): Course {
     ownerId: OWNER,
     academicYearId: 'year-1',
     periodIds: ['period-1'],
+    categoryId: null,
     name: 'Cours',
     professors: [],
     description: null,
@@ -78,6 +86,58 @@ function makeCourse(overrides: Partial<Course>): Course {
     ...overrides,
   }
 }
+
+function makeCategory(overrides: Partial<CourseCategory>): CourseCategory {
+  return {
+    id: 'category-1',
+    ownerId: OWNER,
+    academicYearId: 'year-1',
+    kind: 'domaine',
+    parentId: null,
+    name: 'Catégorie',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  }
+}
+
+describe('hasExamPassed', () => {
+  it("attend la fin de la journée locale de l'examen", () => {
+    expect(hasExamPassed('2026-06-10', new Date('2026-06-10T23:59:59.999'))).toBe(false)
+    expect(hasExamPassed('2026-06-10', new Date('2026-06-11T00:00:00'))).toBe(true)
+    expect(hasExamPassed('2026-06-12', new Date('2026-06-11T12:00:00'))).toBe(false)
+    expect(hasExamPassed(null)).toBe(false)
+    expect(hasExamPassed('invalid')).toBe(false)
+  })
+})
+
+describe('catégorisation des cours (domaine / option / autre)', () => {
+  const domaine = makeCategory({ id: 'domaine-1', kind: 'domaine', name: 'Sciences' })
+  const option = makeCategory({ id: 'option-1', kind: 'option', parentId: domaine.id, name: 'Informatique' })
+  const autre = makeCategory({ id: 'autre-1', kind: 'autre', name: 'Alternance' })
+  const categories = [domaine, option, autre]
+
+  it('sépare domaines, options et autres catégories', () => {
+    expect(domainesForYear(categories, 'year-1')).toEqual([domaine])
+    expect(optionsForDomaine(categories, domaine.id)).toEqual([option])
+    expect(autresCategoriesForYear(categories, 'year-1')).toEqual([autre])
+  })
+
+  it('construit une liste aplatie avec des libellés lisibles', () => {
+    expect(courseCategoryOptions(categories, 'year-1')).toEqual([
+      { id: domaine.id, label: 'Domaine · Sciences' },
+      { id: option.id, label: 'Option · Sciences / Informatique' },
+      { id: autre.id, label: 'Autre catégorie · Alternance' },
+    ])
+  })
+
+  it('décrit la catégorie d\'un cours, ou renvoie null pour le tronc commun', () => {
+    expect(describeCourseCategory(null, categories)).toBeNull()
+    expect(describeCourseCategory(domaine.id, categories)).toBe('Domaine : Sciences')
+    expect(describeCourseCategory(option.id, categories)).toBe('Option : Informatique (Domaine Sciences)')
+    expect(describeCourseCategory(autre.id, categories)).toBe('Catégorie : Alternance')
+  })
+})
 
 describe('computeProgramProgress', () => {
   it('retourne percent=null quand le cours ne possède aucun chapitre', () => {

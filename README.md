@@ -70,9 +70,29 @@ réelle ni un système d'authentification sécurisé.
 - Navigation complète (barre latérale + routes) : tableau de bord, cours,
   calendrier, tâches/examens, documents, notes, statistiques, paramètres.
 - Années académiques et périodes configurables, activation/archivage.
+  Création d'années et de périodes directement depuis **Mes cours** ; le
+  formulaire de nouvelle année propose Q1 et Q2, modifiables, supprimables
+  et complétables (TA, sessions…). L'année et ses périodes sont enregistrées
+  ensemble, sans création partielle.
 - Cours : création, modification, archivage, suppression (avec confirmation
   et suppression en cascade des données associées), recherche et filtres,
   regroupement par période avec sections dépliables/repliables.
+- Catégorisation des cours par année : chaque cours est soit un cours du
+  **tronc commun** (aucune catégorie), soit rattaché à un **domaine** nommé,
+  soit à une **option** nommée appartenant à un domaine, soit à une
+  **autre catégorie** nommée libre. Un cours n'appartient qu'à une seule de
+  ces catégories. Les domaines, options et autres catégories se créent et
+  se modifient depuis **Mes cours** ; une catégorie déjà créée est proposée
+  pour les cours suivants (menu déroulant du formulaire de cours). Une
+  catégorie utilisée par des cours ou des options ne peut pas être
+  supprimée avant d'avoir déplacé ces cours/options.
+- Un même cours peut couvrir plusieurs périodes (Q1, Q2, TA…) et apparaît
+  dans chacune sans dupliquer ses données. Changer l'année dans le formulaire
+  réinitialise la catégorie et les périodes pour éviter les liens entre
+  années.
+- L'onglet **Mes cours** affiche, pour chaque période, la répartition des
+  cours par catégorie (tronc commun, puis chaque domaine avec ses options,
+  puis les autres catégories), avec le nombre de cours de chaque regroupement.
 - Fiche de cours avec onglets : vue d'ensemble, documents, programme et
   progression, tâches et examens, notes personnelles, séances d'étude.
 - Programme/progression : chapitres à cocher, calcul réel de la progression
@@ -82,6 +102,13 @@ réelle ni un système d'authentification sécurisé.
   (IndexedDB en démo, Supabase Storage privé en backend).
 - Tâches et examens : vue par cours et vue globale avec filtres ; statut
   cohérent entre la fiche du cours et le tableau de bord.
+- Résultat distinct pour chaque examen : **en attente de résultat**,
+  **réussi** ou **raté**, modifiable depuis l'onglet **Tâches et examens**
+  du cours et depuis la liste globale. La saisie est disponible après la
+  journée de l'examen (pas pour un examen sans date ou futur). Sans résultat
+  renseigné, un examen passé apparaît en attente ; reporter l'examen à une
+  date future efface son ancien résultat. Le résultat ne modifie pas
+  automatiquement le statut actif/terminé/archivé du cours.
 - Calendrier mensuel : séances, examens et échéances, création de séances
   manuelles.
 - Minuteur de concentration (Pomodoro) : démarrer/pause/reprendre/arrêter,
@@ -108,7 +135,7 @@ réelle ni un système d'authentification sécurisé.
 npm run test
 ```
 
-20 tests automatisés couvrent :
+Les tests automatisés couvrent :
 
 - la logique métier pure (`src/lib/selectors.test.ts`) : calcul de
   progression du programme, progression des tâches, détection des
@@ -117,7 +144,15 @@ npm run test
   persistance réelle via IndexedDB (`fake-indexeddb`), stockage/relecture
   d'un fichier, suppression en cascade d'un cours ;
 - le store applicatif (`src/data/store.test.ts`) : réactivité, cohérence du
-  statut d'une tâche, suppression en cascade ;
+  statut d'une tâche, suppression en cascade, catégorisation des cours
+  (tronc commun / domaine / option / autre catégorie), affectation
+  multi-périodes, résultats d'examen ;
+- les parcours de **Mes cours** (`src/features/courses/CoursesPage.test.tsx`) :
+  création d'année avec périodes, ajout de période, création/modification de
+  domaines et d'options, affectation d'un cours et persistance des résultats ;
+- la migration IndexedDB (`src/lib/storage/db.test.ts`) : conservation des
+  données existantes lors de l'ajout des catégories et des résultats
+  (y compris la conversion des anciens groupes génériques en domaines/options) ;
 - le minuteur de concentration (`src/context/FocusTimerContext.test.tsx`) :
   une séance interrompue n'enregistre que le temps réellement écoulé, le
   temps passé en pause n'est pas comptabilisé, une séance menée à son terme

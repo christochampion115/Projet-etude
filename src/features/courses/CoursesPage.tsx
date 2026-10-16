@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Plus, Search, Archive } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -6,34 +6,46 @@ import { DataBoundary } from '@/components/layout/DataBoundary'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { useSnapshot } from '@/data/DataProvider'
-import { activeAcademicYear, archivedOrCompletedCourses, periodsForYear, visibleCourses } from '@/lib/selectors'
+import { activeAcademicYear, archivedOrCompletedCourses, courseCategoryOptions, periodsForYear, visibleCourses } from '@/lib/selectors'
 import { CourseCard } from './CourseCard'
 import { CourseFormModal } from './CourseFormModal'
 import { YearFormModal } from '@/features/settings/YearFormModal'
+import { PeriodFormModal } from '@/features/settings/PeriodFormModal'
+import { CourseCategoryFormModal } from './CourseCategoryFormModal'
+import { GroupedCourses } from './GroupedCourses'
+import type { Course, CourseCategory } from '@/types/domain'
 
 export function CoursesPage() {
   const navigate = useNavigate()
-  const { academicYears, academicPeriods, courses, topics, tasks, exams } = useSnapshot()
+  const { academicYears, academicPeriods, courses, courseCategories, topics, tasks, exams } = useSnapshot()
   const [selectedYearId, setSelectedYearId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [showArchived, setShowArchived] = useState(false)
   const [courseModal, setCourseModal] = useState<{ open: boolean; periodId?: string } | null>(null)
   const [yearModalOpen, setYearModalOpen] = useState(false)
+  const [periodModalOpen, setPeriodModalOpen] = useState(false)
+  const [categoryModal, setCategoryModal] = useState<{ category?: CourseCategory } | null>(null)
 
   const year = academicYears.find((y) => y.id === selectedYearId) ?? activeAcademicYear(academicYears)
   const periods = year ? periodsForYear(academicPeriods, year.id) : []
+  const categories = courseCategories.filter((c) => c.academicYearId === year?.id)
 
-  const active = useMemo(() => visibleCourses(courses), [courses])
-  const archived = useMemo(() => archivedOrCompletedCourses(courses), [courses])
+  const active = visibleCourses(courses.filter((c) => c.academicYearId === year?.id))
+  const archived = archivedOrCompletedCourses(courses.filter((c) => c.academicYearId === year?.id))
+  const renderCourse = (course: Course) => (
+    <CourseCard key={course.id} course={course}
+      topics={topics.filter((t) => t.courseId === course.id)}
+      tasks={tasks.filter((t) => t.courseId === course.id)}
+      exams={exams.filter((e) => e.courseId === course.id)}
+      onOpen={() => navigate(`/courses/${course.id}`)}
+    />
+  )
 
-  const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase()
-    if (!term) return active
-    return active.filter(
-      (c) => c.name.toLowerCase().includes(term) || c.professors.some((p) => p.toLowerCase().includes(term)),
-    )
-  }, [active, search])
+  const term = search.trim().toLowerCase()
+  const filtered = active.filter(
+    (c) => c.name.toLowerCase().includes(term) || c.professors.some((p) => p.toLowerCase().includes(term)),
+  )
 
   if (academicYears.length === 0) {
     return (
@@ -47,7 +59,7 @@ export function CoursesPage() {
             onAction={() => setYearModalOpen(true)}
           />
         </DataBoundary>
-        {yearModalOpen && <YearFormModal onClose={() => setYearModalOpen(false)} />}
+        {yearModalOpen && <YearFormModal onCreated={(y) => setSelectedYearId(y.id)} onClose={() => setYearModalOpen(false)} />}
       </div>
     )
   }
@@ -58,9 +70,14 @@ export function CoursesPage() {
         title="Mes cours"
         description="Organisez vos cours par année académique et par période."
         actions={
-          <Button variant="primary" icon={<Plus size={16} />} onClick={() => setCourseModal({ open: true })}>
-            Ajouter un cours
-          </Button>
+          <>
+            <Button onClick={() => setYearModalOpen(true)}>Ajouter une année</Button>
+            <Button onClick={() => setPeriodModalOpen(true)}>Ajouter une période</Button>
+            <Button onClick={() => setCategoryModal({})}>Ajouter une catégorie</Button>
+            <Button variant="primary" icon={<Plus size={16} />} onClick={() => setCourseModal({ open: true })}>
+              Ajouter un cours
+            </Button>
+          </>
         }
       />
       <DataBoundary>
@@ -76,6 +93,20 @@ export function CoursesPage() {
               </option>
             ))}
           </select>
+          {categories.length > 0 && year && (
+            <select
+              aria-label="Modifier une catégorie"
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+              value=""
+              onChange={(e) => {
+                const category = categories.find((c) => c.id === e.target.value)
+                if (category) setCategoryModal({ category })
+              }}
+            >
+              <option value="">Modifier une catégorie…</option>
+              {courseCategoryOptions(categories, year.id).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+            </select>
+          )}
           <div className="relative min-w-[200px] flex-1">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -108,7 +139,9 @@ export function CoursesPage() {
             {periods.length === 0 && (
               <EmptyState
                 title="Aucune période pour cette année"
-                description="Ajoutez des périodes (Q1, Q2, session d'examens…) depuis les paramètres pour organiser vos cours."
+                description="Ajoutez des périodes (Q1, Q2, TA…) pour organiser vos cours."
+                actionLabel="Ajouter une période"
+                onAction={() => setPeriodModalOpen(true)}
               />
             )}
             {periods.map((period) => {
@@ -143,24 +176,19 @@ export function CoursesPage() {
                       {periodCourses.length === 0 ? (
                         <p className="text-sm text-slate-400">Aucun cours dans cette période pour le moment.</p>
                       ) : (
-                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                          {periodCourses.map((course) => (
-                            <CourseCard
-                              key={course.id}
-                              course={course}
-                              topics={topics.filter((t) => t.courseId === course.id)}
-                              tasks={tasks.filter((t) => t.courseId === course.id)}
-                              exams={exams.filter((e) => e.courseId === course.id)}
-                              onOpen={() => navigate(`/courses/${course.id}`)}
-                            />
-                          ))}
-                        </div>
+                        <GroupedCourses courses={periodCourses} categories={categories} renderCourse={renderCourse} />
                       )}
                     </div>
                   )}
                 </div>
               )
             })}
+            {active.some((c) => !periods.some((p) => c.periodIds.includes(p.id))) && (
+              <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
+                <h2 className="mb-3 font-medium">Sans période</h2>
+                <GroupedCourses courses={active.filter((c) => !periods.some((p) => c.periodIds.includes(p.id)))} categories={categories} renderCourse={renderCourse} />
+              </section>
+            )}
           </div>
         )}
 
@@ -192,6 +220,11 @@ export function CoursesPage() {
         )}
       </DataBoundary>
 
+      {yearModalOpen && <YearFormModal onCreated={(y) => setSelectedYearId(y.id)} onClose={() => setYearModalOpen(false)} />}
+      {periodModalOpen && year && <PeriodFormModal yearId={year.id} onClose={() => setPeriodModalOpen(false)} />}
+      {categoryModal && year && (
+        <CourseCategoryFormModal yearId={year.id} category={categoryModal.category} onClose={() => setCategoryModal(null)} />
+      )}
       {courseModal?.open && (
         <CourseFormModal
           defaultYearId={year?.id}

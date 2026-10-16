@@ -6,6 +6,7 @@ import type {
   AcademicPeriod,
   AcademicYear,
   Course,
+  CourseCategory,
   CourseDocument,
   CourseTopic,
   DocumentCategory,
@@ -94,6 +95,7 @@ export function createDemoRepository(): Repository {
         academicYears.some((y) => y.id === p.academicYearId),
       )
       snapshot.courses = courses
+      snapshot.courseCategories = await db.getAllFromIndex('courseCategories', 'ownerId', ownerId)
       const courseIds = new Set(courses.map((c) => c.id))
       snapshot.topics = topics.filter((t) => courseIds.has(t.courseId))
       snapshot.documentCategories = documentCategories
@@ -106,10 +108,15 @@ export function createDemoRepository(): Repository {
       return snapshot
     },
 
-    async createAcademicYear(input) {
+    async createAcademicYear(input, periods = []) {
       const db = await getDemoDb()
       const entity: AcademicYear = { ...input, createdAt: nowIso(), updatedAt: nowIso() }
-      await db.put('academicYears', entity)
+      const tx = db.transaction(['academicYears', 'academicPeriods'], 'readwrite')
+      await tx.objectStore('academicYears').put(entity)
+      for (const period of periods) {
+        await tx.objectStore('academicPeriods').put({ ...period, createdAt: nowIso(), updatedAt: nowIso() })
+      }
+      await tx.done
       return entity
     },
     async updateAcademicYear(id, patch) {
@@ -122,7 +129,15 @@ export function createDemoRepository(): Repository {
     },
     async deleteAcademicYear(id) {
       const db = await getDemoDb()
-      await db.delete('academicYears', id)
+      const tx = db.transaction(['academicYears', 'academicPeriods', 'courseCategories', 'courses'], 'readwrite')
+      const courses = await tx.objectStore('courses').getAll()
+      if (courses.some((c) => c.academicYearId === id)) throw new Error('Supprimez les cours avant de supprimer cette année.')
+      const periods = await tx.objectStore('academicPeriods').index('academicYearId').getAll(id)
+      const categories = await tx.objectStore('courseCategories').getAll()
+      for (const period of periods) await tx.objectStore('academicPeriods').delete(period.id)
+      for (const category of categories.filter((c) => c.academicYearId === id)) await tx.objectStore('courseCategories').delete(category.id)
+      await tx.objectStore('academicYears').delete(id)
+      await tx.done
     },
 
     async createAcademicPeriod(input) {
@@ -141,7 +156,39 @@ export function createDemoRepository(): Repository {
     },
     async deleteAcademicPeriod(id) {
       const db = await getDemoDb()
-      await db.delete('academicPeriods', id)
+      const tx = db.transaction(['academicPeriods', 'courses'], 'readwrite')
+      const courses = await tx.objectStore('courses').getAll()
+      for (const course of courses.filter((c) => c.periodIds.includes(id))) {
+        await tx.objectStore('courses').put({ ...course, periodIds: course.periodIds.filter((pid) => pid !== id), updatedAt: nowIso() })
+      }
+      await tx.objectStore('academicPeriods').delete(id)
+      await tx.done
+    },
+
+    async createCourseCategory(input) {
+      const db = await getDemoDb()
+      const entity: CourseCategory = { ...input, createdAt: nowIso(), updatedAt: nowIso() }
+      await db.put('courseCategories', entity)
+      return entity
+    },
+    async updateCourseCategory(id, patch) {
+      const db = await getDemoDb()
+      const current = await db.get('courseCategories', id)
+      if (!current) throw new Error('Catégorie introuvable')
+      const updated = { ...current, ...patch, updatedAt: nowIso() }
+      await db.put('courseCategories', updated)
+      return updated
+    },
+    async deleteCourseCategory(id) {
+      const db = await getDemoDb()
+      const tx = db.transaction(['courseCategories', 'courses'], 'readwrite')
+      const categories = await tx.objectStore('courseCategories').getAll()
+      const courses = await tx.objectStore('courses').getAll()
+      if (categories.some((c) => c.parentId === id) || courses.some((c) => c.categoryId === id)) {
+        throw new Error('Déplacez les cours et options avant de supprimer cette catégorie.')
+      }
+      await tx.objectStore('courseCategories').delete(id)
+      await tx.done
     },
 
     async createCourse(input) {

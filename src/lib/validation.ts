@@ -18,6 +18,7 @@ export const courseSchema = z.object({
   name: z.string().trim().min(1, 'Le nom du cours est obligatoire').max(120),
   academicYearId: z.string().min(1, "Choisissez l'année académique"),
   periodIds: z.array(z.string()).min(1, 'Choisissez au moins une période'),
+  categoryId: z.string(),
   professors: z.string().max(300).optional().or(z.literal('')),
   description: z.string().max(2000).optional().or(z.literal('')),
   ects: z

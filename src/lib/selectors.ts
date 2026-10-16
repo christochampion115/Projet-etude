@@ -2,11 +2,70 @@ import type {
   AcademicPeriod,
   AcademicYear,
   Course,
+  CourseCategory,
   CourseTopic,
   Exam,
   StudySession,
   Task,
 } from '@/types/domain'
+
+export function hasExamPassed(date: string | null, referenceDate = new Date()): boolean {
+  if (!date) return false
+  // Une date sans heure couvre toute la journée locale de l'examen.
+  const end = date.length === 10 ? new Date(`${date}T23:59:59.999`) : new Date(date)
+  return end.getTime() < referenceDate.getTime()
+}
+
+/** Domaines d'une année académique, triés par nom. */
+export function domainesForYear(categories: CourseCategory[], academicYearId: string): CourseCategory[] {
+  return categories
+    .filter((c) => c.academicYearId === academicYearId && c.kind === 'domaine')
+    .sort((a, b) => a.name.localeCompare(b.name, 'fr'))
+}
+
+/** Options rattachées à un domaine donné, triées par nom. */
+export function optionsForDomaine(categories: CourseCategory[], domaineId: string): CourseCategory[] {
+  return categories
+    .filter((c) => c.kind === 'option' && c.parentId === domaineId)
+    .sort((a, b) => a.name.localeCompare(b.name, 'fr'))
+}
+
+/** Autres catégories (ni domaine ni option) d'une année académique, triées par nom. */
+export function autresCategoriesForYear(categories: CourseCategory[], academicYearId: string): CourseCategory[] {
+  return categories
+    .filter((c) => c.academicYearId === academicYearId && c.kind === 'autre')
+    .sort((a, b) => a.name.localeCompare(b.name, 'fr'))
+}
+
+/**
+ * Liste aplatie de toutes les catégories d'une année, avec un libellé prêt à
+ * afficher (les options sont préfixées par le nom de leur domaine).
+ */
+export function courseCategoryOptions(categories: CourseCategory[], academicYearId: string): { id: string; label: string }[] {
+  const domaines = domainesForYear(categories, academicYearId)
+  const autres = autresCategoriesForYear(categories, academicYearId)
+  return [
+    ...domaines.flatMap((domaine) => [
+      { id: domaine.id, label: `Domaine · ${domaine.name}` },
+      ...optionsForDomaine(categories, domaine.id).map((option) => ({
+        id: option.id,
+        label: `Option · ${domaine.name} / ${option.name}`,
+      })),
+    ]),
+    ...autres.map((autre) => ({ id: autre.id, label: `Autre catégorie · ${autre.name}` })),
+  ]
+}
+
+/** Libellé lisible de la catégorie d'un cours (`null` pour le tronc commun). */
+export function describeCourseCategory(categoryId: string | null, categories: CourseCategory[]): string | null {
+  if (!categoryId) return null
+  const category = categories.find((c) => c.id === categoryId)
+  if (!category) return null
+  if (category.kind === 'domaine') return `Domaine : ${category.name}`
+  if (category.kind === 'autre') return `Catégorie : ${category.name}`
+  const domaine = categories.find((c) => c.id === category.parentId)
+  return `Option : ${category.name}${domaine ? ` (Domaine ${domaine.name})` : ''}`
+}
 
 export interface ProgramProgress {
   completed: number

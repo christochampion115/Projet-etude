@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/Badge'
 import { ProgressBar } from '@/components/ui/ProgressBar'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useDataStore, useSnapshot } from '@/data/DataProvider'
-import { computeProgramProgress, computeTaskProgress, findNextDeadline } from '@/lib/selectors'
+import { computeProgramProgress, computeTaskProgress, describeCourseCategory, findNextDeadline } from '@/lib/selectors'
 import { pushRecentCourseId } from '@/lib/recentCourses'
 import { CourseFormModal } from './CourseFormModal'
 import { OverviewTab } from './detail/OverviewTab'
@@ -74,6 +74,7 @@ export function CourseDetailPage() {
             course={course}
             years={academicYears}
             periods={academicPeriods}
+            categories={snapshot.courseCategories}
             topics={topics}
             tasks={tasks}
             exams={exams}
@@ -130,6 +131,7 @@ function CourseHeader({
   course,
   years,
   periods,
+  categories,
   topics,
   tasks,
   exams,
@@ -139,6 +141,7 @@ function CourseHeader({
   course: ReturnType<typeof useSnapshot>['courses'][number]
   years: ReturnType<typeof useSnapshot>['academicYears']
   periods: ReturnType<typeof useSnapshot>['academicPeriods']
+  categories: ReturnType<typeof useSnapshot>['courseCategories']
   topics: ReturnType<typeof useSnapshot>['topics']
   tasks: ReturnType<typeof useSnapshot>['tasks']
   exams: ReturnType<typeof useSnapshot>['exams']
@@ -148,6 +151,7 @@ function CourseHeader({
   const store = useDataStore()
   const year = years.find((y) => y.id === course.academicYearId)
   const coursePeriods = periods.filter((p) => course.periodIds.includes(p.id))
+  const categoryLabel = describeCourseCategory(course.categoryId, categories.filter((c) => c.academicYearId === course.academicYearId))
   const progress = computeProgramProgress(topics)
   const taskProgress = computeTaskProgress(tasks)
   const deadline = findNextDeadline(course.id, tasks, exams)
@@ -168,6 +172,7 @@ function CourseHeader({
             {coursePeriods.length > 0 ? ` · ${coursePeriods.map((p) => p.name).join(', ')}` : ''}
             {course.ects ? ` · ${course.ects} ECTS` : ''}
           </p>
+          {categoryLabel && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{categoryLabel}</p>}
         </div>
         <div className="flex items-center gap-2">
           {course.status === 'active' && (

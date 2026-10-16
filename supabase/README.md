@@ -13,6 +13,16 @@ de l'application (au lieu du mode démonstration locale).
 - `migrations/0004_new_user_defaults.sql` — initialise automatiquement les
   préférences et les catégories de documents par défaut à la création d'un
   compte.
+- `migrations/0005_course_categories_and_exam_results.sql` — catégorisation
+  des cours par année (domaine / option / autre catégorie), affectation
+  unique des cours, résultats d'examen et création transactionnelle d'une
+  année avec ses périodes.
+
+Sur une installation existante ayant déjà appliqué les migrations 0001 à
+0004, appliquez uniquement **0005** avant d'utiliser cette version du frontend.
+En mode démonstration, la base IndexedDB passe automatiquement en version 3
+en conservant les cours et examens existants (et en convertissant les
+anciens groupes génériques en domaines/options le cas échéant).
 
 ## Mise en place
 
@@ -42,6 +52,17 @@ de l'application (au lieu du mode démonstration locale).
   `storage.objects`.
 - Ne placez jamais la clé `service_role` dans le frontend : seule la clé
   publique `anon` doit être utilisée côté client.
+- Les catégories de cours utilisent RLS et des clés étrangères composites
+  pour empêcher de rattacher un cours ou une option à un domaine d'une autre
+  année ou d'un autre propriétaire ; un trigger impose en base qu'une option
+  soit toujours rattachée à un domaine (jamais à une autre option ou une
+  autre catégorie). La création d'année avec périodes utilise une fonction
+  `security invoker` : les politiques RLS restent applicables.
+- Le store applicatif refuse les résultats pour une date absente ou non
+  passée et les réinitialise si l'examen est reporté. Cette règle utilise
+  la journée locale du navigateur, de façon identique en démo et en backend.
+  La base contraint les valeurs possibles du résultat ; la vérification
+  de la date reste une règle applicative, pas une restriction d'accès SQL.
 
 ## Limites connues
 
